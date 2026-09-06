@@ -1,0 +1,1907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Whistle — Ref Pay Tracker</title>
+
+<!-- PWA metadata: tells the browser this is an installable app -->
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<meta name="theme-color" content="#fbbf24" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Whistle" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- jsPDF for PDF exports. Loaded from a CDN; if it fails, PDF button will disable itself. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #141414;
+    --panel-2: #1c1c1c;
+    --line: #2a2a2a;
+    --ink: #f5f5f5;
+    --ink-dim: #888;
+    --ink-mute: #555;
+    --accent: #fbbf24;
+    --accent-2: #ef4444;
+    --green: #4ade80;
+    --blue: #60a5fa;
+    --stripe: repeating-linear-gradient(90deg, #f5f5f5 0 22px, #0a0a0a 22px 44px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+  /* ==================== HEADER ==================== */
+  .header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #0a0a0a 0%, #141414 100%);
+    padding: 24px 32px 20px;
+    padding-top: max(24px, env(safe-area-inset-top));
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 6px;
+    background: var(--stripe);
+  }
+  .header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    width: 44px; height: 44px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: grid; place-items: center;
+    box-shadow: 4px 4px 0 var(--accent-2);
+  }
+  .brand-mark svg { width: 32px; height: 32px; }
+  .brand-text h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .brand-text .sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    margin-top: 4px;
+  }
+  .header-meta {
+    display: flex; gap: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    flex-wrap: wrap;
+  }
+  .header-meta strong { color: var(--accent); font-weight: 500; }
+  .header-meta .cache { color: var(--blue); font-weight: 500; }
+
+  /* Countdown pills strip */
+  .countdowns {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .pill {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.05em;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .pill strong { color: var(--ink); font-weight: 500; }
+  .pill.imminent { border-color: var(--green); color: var(--green); }
+  .pill.imminent strong { color: var(--green); }
+  .pill.today { border-color: var(--accent); color: var(--accent); background: rgba(251, 191, 36, 0.06); }
+  .pill.today strong { color: var(--accent); }
+
+  /* ==================== CONTROLS ==================== */
+  .controls {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 32px;
+    display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;
+  }
+  .control-group { display: flex; flex-direction: column; gap: 6px; }
+  .control-group label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+  .control-group input {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 9px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    border-radius: 3px;
+    min-width: 200px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .control-group input:focus { border-color: var(--accent); }
+  .btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 11px 20px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--accent-2); }
+  .btn:active { transform: translate(0, 0); box-shadow: none; }
+  .btn.small {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .btn.ghost:hover { border-color: var(--accent); box-shadow: 3px 3px 0 var(--line); }
+
+  /* ==================== VIEW SWITCHER ==================== */
+  .view-bar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 0 32px;
+    display: flex; gap: 0;
+    overflow-x: auto;
+  }
+  .view-tab {
+    padding: 14px 20px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    color: var(--ink-dim);
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .view-tab:hover { color: var(--ink); }
+  .view-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .filter-chips {
+    margin-left: auto;
+    display: flex; gap: 6px; align-items: center;
+    padding: 8px 0;
+  }
+  .filter-chip {
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .filter-chip:hover { color: var(--ink); }
+  .filter-chip.active {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+  }
+
+  /* ==================== STATS GRID ==================== */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .stat { background: var(--panel); padding: 22px 24px; }
+  .stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 42px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+  }
+  .stat.accent .stat-value { color: var(--accent); }
+  .stat.green .stat-value { color: var(--green); }
+  .stat.blue .stat-value { color: var(--blue); }
+  .stat-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-mute);
+    margin-top: 6px;
+  }
+
+  /* ==================== MAIN + SECTIONS ==================== */
+  main { padding: 32px; padding-bottom: max(32px, env(safe-area-inset-bottom)); }
+  .section-title {
+    display: flex; align-items: baseline; gap: 16px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+  }
+  .section-title h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 0.04em;
+  }
+  .section-title .count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.1em;
+  }
+
+  /* ==================== TABLES ==================== */
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: var(--panel-2); border-bottom: 2px solid var(--accent); }
+  th {
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    padding: 14px 16px;
+    font-weight: 500;
+  }
+  th.right, td.right { text-align: right; }
+  tbody tr { border-bottom: 1px solid var(--line); transition: background 0.1s; }
+  tbody tr:hover { background: var(--panel-2); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr.cancelled { opacity: 0.5; }
+  tbody tr.cancelled td { text-decoration: line-through; }
+  td { padding: 14px 16px; font-size: 14px; }
+  td.date { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--ink-dim); }
+  td.div { font-weight: 500; }
+  td.pay { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--green); }
+  td.pay.est { color: var(--blue); }
+  .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+  .badge.cr { background: var(--accent); color: #000; }
+  .badge.ar { background: #3b3b3b; color: var(--ink); }
+  .badge.hourly { background: var(--blue); color: #000; }
+  .badge.cancelled { background: var(--accent-2); color: #fff; }
+  .status-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .status-dot.confirmed { background: var(--green); }
+  .status-dot.estimated { background: var(--blue); }
+  .partners {
+    font-size: 11px;
+    color: var(--ink-dim);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+  }
+  .partners .p-name { color: var(--ink); }
+
+  /* ==================== PAY PERIOD GROUPS ==================== */
+  .period-group { margin-bottom: 32px; }
+  .period-header {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--panel-2);
+    border-left: 4px solid var(--accent);
+    padding: 14px 18px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .period-header .info { display: flex; flex-direction: column; gap: 4px; }
+  .period-header .name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 0.04em;
+  }
+  .period-header .dates {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.05em;
+  }
+  .period-header .right-side { display: flex; align-items: center; gap: 16px; }
+  .period-header .totals { text-align: right; }
+  .period-header .total-amt {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px;
+    color: var(--green);
+    letter-spacing: 0.03em;
+  }
+  .period-header .total-games {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+  .download-menu {
+    position: relative;
+    display: inline-block;
+  }
+  .download-menu .btn { position: relative; }
+  .download-menu-items {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    min-width: 180px;
+    z-index: 10;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .download-menu.open .download-menu-items { display: block; }
+  .download-menu-items button {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .download-menu-items button:hover { background: var(--panel-2); color: var(--accent); }
+  .download-menu-items button:disabled { color: var(--ink-mute); cursor: not-allowed; }
+
+  /* ==================== GAME DAY VIEW ==================== */
+  .day-block { margin-bottom: 40px; }
+  .day-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 12px; margin-bottom: 20px;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .day-header .day-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    letter-spacing: 0.04em;
+  }
+  .day-header .day-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .game-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 3px;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+    display: grid;
+    grid-template-columns: 100px 1fr auto;
+    gap: 24px;
+    align-items: center;
+  }
+  .game-card.hourly { border-left-color: var(--blue); }
+  .game-card.past { opacity: 0.5; }
+  .game-card .time-block {
+    font-family: 'Bebas Neue', sans-serif;
+    line-height: 1;
+  }
+  .game-card .time-block .hour {
+    font-size: 42px;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+  }
+  .game-card .time-block .ampm {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+  }
+  .game-card .info-block { min-width: 0; }
+  .game-card .info-block .division {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .game-card .info-block .field-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-dim);
+    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+  }
+  .game-card .info-block .teams {
+    font-size: 13px;
+    color: var(--ink-dim);
+    margin-bottom: 6px;
+  }
+  .game-card .info-block .teams .vs { color: var(--ink-mute); margin: 0 6px; }
+  .game-card .info-block .partners-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+  .game-card .info-block .partners-line .role { color: var(--ink-mute); }
+  .game-card .side-block {
+    display: flex; flex-direction: column;
+    align-items: flex-end; gap: 8px;
+  }
+  .game-card .side-block .pay-amt {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    color: var(--green);
+    letter-spacing: 0.02em;
+  }
+  .game-card .side-block .pay-amt.est { color: var(--blue); }
+  .day-summary {
+    background: var(--panel-2);
+    border-radius: 3px;
+    padding: 16px 20px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .day-summary .amt {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    color: var(--green);
+    letter-spacing: 0.03em;
+    text-transform: none;
+  }
+
+  /* ==================== STATES / WARNINGS ==================== */
+  .state {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--ink-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .state.error { color: var(--accent-2); }
+  .warn {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid var(--accent-2);
+    border-left-width: 4px;
+    padding: 14px 18px;
+    margin: 16px 0 24px;
+    border-radius: 3px;
+    font-size: 13px;
+    color: #fca5a5;
+  }
+  .warn strong {
+    color: var(--accent-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .warn ul { margin-top: 6px; padding-left: 20px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .info-box {
+    background: rgba(96, 165, 250, 0.06);
+    border: 1px solid rgba(96, 165, 250, 0.4);
+    border-left-width: 4px;
+    padding: 12px 16px;
+    margin: 16px 0 24px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--blue);
+    letter-spacing: 0.05em;
+    display: flex; gap: 20px; flex-wrap: wrap;
+  }
+  .info-box span { display: inline-flex; align-items: center; }
+
+  footer {
+    padding: 24px 32px;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    text-align: center;
+  }
+
+  /* ==================== MOBILE ==================== */
+  @media (max-width: 700px) {
+    main { padding: 20px 16px; }
+    .header { padding: 20px 16px; }
+    .controls, .view-bar { padding-left: 16px; padding-right: 16px; }
+    .view-bar { flex-wrap: wrap; }
+    .filter-chips { margin-left: 0; }
+    .control-group input { min-width: 0; width: 100%; }
+    .control-group { flex: 1 1 100%; }
+    th:nth-child(3), td:nth-child(3) { display: none; } /* hide Field on mobile */
+    .stat-value { font-size: 32px; }
+    .game-card { grid-template-columns: 80px 1fr; gap: 16px; padding: 16px; }
+    .game-card .side-block { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; }
+    .game-card .time-block .hour { font-size: 36px; }
+    .day-header .day-name { font-size: 28px; }
+  }
+
+  /* ==================== PRINT ==================== */
+  @media print {
+    body { background: #fff; color: #000; }
+    .header, .controls, .view-bar, footer, .btn, .download-menu, .filter-chips,
+    .info-box, .countdowns { display: none !important; }
+    main { padding: 0; }
+    .stat { background: #fff; border: 1px solid #ccc; }
+    .stat-value { color: #000 !important; }
+    .stat-label, .stat-sub { color: #666; }
+    .stats { background: #ccc; border: none; }
+    .table-wrap, .period-header, .game-card, .day-summary { background: #fff; border-color: #ccc; box-shadow: none; }
+    th { color: #666; border-bottom-color: #000; }
+    td { color: #000; border-bottom-color: #eee; }
+    td.pay { color: #000 !important; }
+    .badge.cr { background: #fbbf24; color: #000; border: 1px solid #000; }
+    .badge.ar { background: #eee; color: #000; border: 1px solid #000; }
+    .badge.hourly { background: #cce; color: #000; border: 1px solid #000; }
+    .section-title h2 { color: #000; }
+    .period-header { border-left-color: #000 !important; }
+    .game-card { border-left-color: #000 !important; page-break-inside: avoid; }
+    .game-card .pay-amt { color: #000 !important; }
+    .day-summary .amt { color: #000 !important; }
+    .day-header { border-bottom-color: #000; }
+    .period-header .total-amt { color: #000 !important; }
+    .period-group { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-row">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 512 512"><path d="M 100 140 L 175 380 L 256 220 L 337 380 L 412 140" stroke="#0a0a0a" stroke-width="55" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>WHISTLE</h1>
+        <div class="sub">Ref Pay Tracker · SLS F26</div>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span>STATUS · <strong id="sheetStatus">CONNECTING</strong></span>
+      <span>UPDATED · <strong id="lastUpdated">—</strong></span>
+      <span id="cacheNote"></span>
+    </div>
+  </div>
+  <div class="countdowns" id="countdowns"></div>
+</header>
+
+<section class="controls">
+  <div class="control-group">
+    <label for="firstName">First Name</label>
+    <input id="firstName" type="text" value="" placeholder="e.g. jane" autocomplete="off" />
+  </div>
+  <div class="control-group">
+    <label for="lastName">Last Name</label>
+    <input id="lastName" type="text" value="" placeholder="e.g. doe" autocomplete="off" />
+  </div>
+  <button class="btn" id="refreshBtn">↻ Refresh</button>
+</section>
+
+<div class="view-bar">
+  <button class="view-tab active" data-view="overview">Overview</button>
+  <button class="view-tab" data-view="gameday">Game Day</button>
+  <div class="filter-chips" id="filterChips">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-mute);letter-spacing:0.15em;text-transform:uppercase;margin-right:8px;">Show:</span>
+    <button class="filter-chip active" data-filter="all">All</button>
+    <button class="filter-chip" data-filter="upcoming">Upcoming</button>
+    <button class="filter-chip" data-filter="past">Past</button>
+  </div>
+</div>
+
+<section class="stats" id="statsSection">
+  <div class="stat green">
+    <div class="stat-label">Total Earnings</div>
+    <div class="stat-value" id="statTotal">$0</div>
+    <div class="stat-sub" id="statTotalSub">confirmed + estimated</div>
+  </div>
+  <div class="stat green">
+    <div class="stat-label">Confirmed</div>
+    <div class="stat-value" id="statConfirmed">$0</div>
+    <div class="stat-sub" id="statConfirmedSub">from payroll</div>
+  </div>
+  <div class="stat blue">
+    <div class="stat-label">Upcoming (Est.)</div>
+    <div class="stat-value" id="statEstimated">$0</div>
+    <div class="stat-sub" id="statEstimatedSub">not yet payrolled</div>
+  </div>
+  <div class="stat accent">
+    <div class="stat-label">Assignments</div>
+    <div class="stat-value" id="statCount">0</div>
+    <div class="stat-sub" id="statCountSub">games + shifts</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Sheet Total</div>
+    <div class="stat-value" id="statSheetTotal">—</div>
+    <div class="stat-sub">from payroll summary</div>
+  </div>
+</section>
+
+<main>
+  <div class="info-box">
+    <span><span class="status-dot confirmed"></span>CONFIRMED = from Payroll</span>
+    <span><span class="status-dot estimated"></span>ESTIMATED = from Pay Scale</span>
+  </div>
+
+  <div id="warnContainer"></div>
+
+  <!-- Overview view -->
+  <div id="viewOverview">
+    <div class="section-title">
+      <h2>BY PAY PERIOD</h2>
+      <span class="count" id="periodCount">— periods</span>
+    </div>
+    <div id="periodList">
+      <div class="state">Loading assignments…</div>
+    </div>
+
+    <div class="section-title" style="margin-top: 40px;">
+      <h2>ALL ITEMS</h2>
+      <span class="count" id="allCount">— total</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Field</th>
+            <th>Division / Partners</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th class="right">Pay</th>
+          </tr>
+        </thead>
+        <tbody id="assignmentsBody">
+          <tr><td colspan="7" class="state">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div id="cancelledSection" style="margin-top: 40px; display: none;">
+      <div class="section-title">
+        <h2 style="color:var(--accent-2)">CANCELLED</h2>
+        <span class="count" id="cancelledCount"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Field</th>
+              <th>Division</th>
+              <th>Role</th>
+              <th class="right">Would-Have-Been Pay</th>
+            </tr>
+          </thead>
+          <tbody id="cancelledBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Day view -->
+  <div id="viewGameday" style="display: none;">
+    <div id="gamedayList">
+      <div class="state">Loading…</div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  DATA LIVE FROM SLS MASTER SHEET · RATES READ DYNAMICALLY · NOT AN OFFICIAL SLS PRODUCT
+</footer>
+
+<script>
+// ============================================================
+// SHEET CONFIG
+// ============================================================
+const SHEET_ID = '1d528hMOpZDq4nS-l8_pB0PO4iacv9SGKYGxs6uesCJE';
+const TABS = {
+  payroll:        1551199969,
+  payrollSummary: 1934412306,
+  schedule:       1490026671,
+  hourly:         2003177213,
+  outdoorPay:     581916481,
+  indoorPay:      743456320,
+};
+const csvUrl = (gid) => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
+const CACHE_KEY = 'whistle-cache-v2';
+
+// ============================================================
+// 2026 PAY PERIODS
+// ============================================================
+const PAY_PERIODS = [
+  { pay: '1/15/26',  start: '11/1/25',  end: '1/11/26'  },
+  { pay: '1/30/26',  start: '1/12/26',  end: '1/25/26'  },
+  { pay: '2/13/26',  start: '1/26/26',  end: '2/8/26'   },
+  { pay: '2/27/26',  start: '2/9/26',   end: '2/22/26'  },
+  { pay: '3/13/26',  start: '2/23/26',  end: '3/8/26'   },
+  { pay: '3/31/26',  start: '3/9/26',   end: '3/22/26'  },
+  { pay: '4/15/26',  start: '3/23/26',  end: '4/12/26'  },
+  { pay: '4/30/26',  start: '4/13/26',  end: '4/25/26'  },
+  { pay: '5/15/26',  start: '4/26/26',  end: '5/10/26'  },
+  { pay: '5/29/26',  start: '5/11/26',  end: '5/24/26'  },
+  { pay: '6/15/26',  start: '5/25/26',  end: '6/7/26'   },
+  { pay: '6/30/26',  start: '6/8/26',   end: '6/21/26'  },
+  { pay: '7/15/26',  start: '6/22/26',  end: '7/12/26'  },
+  { pay: '7/31/26',  start: '7/13/26',  end: '7/26/26'  },
+  { pay: '8/14/26',  start: '7/27/26',  end: '8/9/26'   },
+  { pay: '8/31/26',  start: '8/10/26',  end: '8/23/26'  },
+  { pay: '9/15/26',  start: '8/24/26',  end: '9/6/26'   },
+  { pay: '9/30/26',  start: '9/7/26',   end: '9/20/26'  },
+  { pay: '10/15/26', start: '9/21/26',  end: '10/11/26' },
+  { pay: '10/30/26', start: '10/12/26', end: '10/25/26' },
+  { pay: '11/13/26', start: '10/26/26', end: '11/8/26'  },
+  { pay: '11/30/26', start: '11/9/26',  end: '11/22/26' },
+  { pay: '12/15/26', start: '11/23/26', end: '12/6/26'  },
+  { pay: '12/31/26', start: '12/7/26',  end: '12/27/26' },
+];
+
+// ============================================================
+// STATE — top-level variables holding what the app is doing
+// ============================================================
+// CACHED_DATA:      the raw sheet tabs (parsed CSV rows)
+// CURRENT_VIEW:     which tab is showing — 'overview' or 'gameday'
+// CURRENT_FILTER:   which time filter — 'all', 'upcoming', or 'past'
+// LAST_MINE:        the most recently built list of your assignments
+// LAST_CANCELLED:   the most recently built list of cancelled games
+// ============================================================
+let CACHED_DATA = null;
+let CURRENT_VIEW = 'overview';
+let CURRENT_FILTER = 'all';
+let LAST_MINE = [];
+let LAST_CANCELLED = [];
+
+// ============================================================
+// CSV & DATE UTILITIES
+// ============================================================
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i+1] === '"') { field += '"'; i++; }
+      else if (c === '"') inQuotes = false;
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c === '\r') { /* skip */ }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(cell => cell && cell.trim()));
+}
+
+function parseDate(str) {
+  if (!str) return null;
+  const s = str.trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let [_, mo, d, y] = m;
+    y = +y < 100 ? 2000 + +y : +y;
+    return new Date(+y, +mo - 1, +d);
+  }
+  return null;
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function fmtDateLong(d) {
+  if (!d) return '—';
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function parseMoney(str) {
+  if (!str) return 0;
+  const n = parseFloat(String(str).replace(/[^0-9.\-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+function normalizeDivision(str) {
+  return (str || '')
+    .toLowerCase()
+    .replace(/\s+boys?\b/g, '')
+    .replace(/\s+girls?\b/g, '')
+    .replace(/\s+\d+\+?\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function timeToMin(str) {
+  if (!str) return 0;
+  const m = str.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!m) return 0;
+  let h = +m[1], min = +m[2];
+  const ampm = (m[3] || '').toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+// Combine a Date (YYYY-MM-DD) with a time string ("12:30 PM") into a full Date
+function combineDateTime(date, timeStr) {
+  if (!date) return null;
+  const min = timeToMin(timeStr);
+  const d = new Date(date);
+  d.setHours(Math.floor(min / 60), min % 60, 0, 0);
+  return d;
+}
+
+function findPayPeriod(date) {
+  if (!date) return null;
+  for (const p of PAY_PERIODS) {
+    const start = parseDate(p.start);
+    const end = parseDate(p.end);
+    if (start && end && date >= start && date <= end) return p;
+  }
+  return null;
+}
+
+// Days until a given date (positive = future, negative = past, 0 = today)
+function daysUntil(date) {
+  if (!date) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  const diff = target - today;
+  return Math.round(diff / (24 * 60 * 60 * 1000));
+}
+
+// ============================================================
+// FETCH & CACHE
+// ============================================================
+async function fetchTab(gid) {
+  const resp = await fetch(csvUrl(gid), { cache: 'no-cache' });
+  if (!resp.ok) throw new Error(`Tab ${gid}: HTTP ${resp.status}`);
+  return parseCSV(await resp.text());
+}
+
+async function fetchAll() {
+  const entries = Object.entries(TABS);
+  const results = await Promise.all(entries.map(([_, gid]) => fetchTab(gid)));
+  const data = {};
+  entries.forEach(([name], i) => { data[name] = results[i]; });
+  return data;
+}
+
+function saveCache(data) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      data,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (e) { /* localStorage full or disabled */ }
+}
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+
+// ============================================================
+// PAY SCALE
+// ============================================================
+function buildPayScale(rows) {
+  const scale = {};
+  for (let i = 1; i < rows.length; i++) {
+    const [age, cr, ar] = rows[i];
+    if (!age) continue;
+    const key = age.toLowerCase().trim();
+    scale[key] = { CR: parseMoney(cr), AR: parseMoney(ar) };
+  }
+  return scale;
+}
+
+function lookupRate(division, role, outdoorScale) {
+  const norm = normalizeDivision(division);
+  const pos = (role || '').toUpperCase().startsWith('AR') ? 'AR' : 'CR';
+  if (outdoorScale[norm]) return { amount: outdoorScale[norm][pos] || 0, key: norm };
+  const variants = [
+    norm,
+    norm.replace(/(\d+)(st|nd|rd|th)\/\d+(st|nd|rd|th)\s*grade/, '$1$2'),
+    norm.replace(/\s*grade\s*/g, ''),
+    norm.split('/')[0].trim(),
+  ];
+  for (const v of variants) {
+    if (outdoorScale[v]) return { amount: outdoorScale[v][pos] || 0, key: v };
+  }
+  return { amount: 0, key: null };
+}
+
+// ============================================================
+// BUILD UNIFIED ASSIGNMENT LIST
+// ============================================================
+// This is the core data transformation. Given raw sheet data and
+// the user's name, it produces:
+//   - `combined`: the user's assignments (games + hourly), with pay
+//   - `cancelled`: games that were on the schedule but got called off
+// ============================================================
+function buildAssignments(data, firstName, lastName) {
+  const fullName = `${firstName} ${lastName}`.toLowerCase();
+  const outdoorScale = buildPayScale(data.outdoorPay);
+
+  // --- Step 1: Index Payroll by (date + time + role) ---
+  const payrollByKey = new Map();
+  const payHdr = data.payroll[0].map(h => h.toLowerCase().trim());
+  const pCol = (n) => payHdr.indexOf(n);
+  for (let i = 1; i < data.payroll.length; i++) {
+    const r = data.payroll[i];
+    const fn = (r[pCol('first name')] || '').toLowerCase().trim();
+    const ln = (r[pCol('last name')] || '').toLowerCase().trim();
+    if (fn !== firstName || ln !== lastName) continue;
+    const date = parseDate(r[pCol('date')]);
+    const time = r[pCol('time')] || '';
+    const role = r[pCol('role')] || '';
+    const key = `${date ? date.getTime() : ''}|${time}|${role.toLowerCase()}`;
+    payrollByKey.set(key, {
+      date, dateRaw: r[pCol('date')], time,
+      field: r[pCol('field')] || '',
+      division: r[pCol('age')] || '',
+      role, pay: parseMoney(r[pCol('pay')]),
+      confirmed: true,
+    });
+  }
+
+  // --- Step 2: Walk Ref Schedule; extract the user's games + partners ---
+  // Ref Schedule columns: date, start time, field name, division name,
+  //                       home name, away name, CR 1, CR 2, AR 1, AR2,
+  //                       Game Cancelled
+  const scheduleAssignments = [];
+  const cancelled = [];
+  const schedHdr = data.schedule[0].map(h => h.toLowerCase().trim());
+  const sCol = (n) => schedHdr.indexOf(n);
+  const positions = [
+    { col: 'cr 1', role: 'CR' },
+    { col: 'cr 2', role: 'CR' },
+    { col: 'ar 1', role: 'AR' },
+    { col: 'ar2',  role: 'AR' },
+    { col: 'ar 2', role: 'AR' }, // future-proofing
+  ];
+
+  for (let i = 1; i < data.schedule.length; i++) {
+    const r = data.schedule[i];
+    // Find the user's position on this game (if any)
+    let myPos = null;
+    for (const p of positions) {
+      const idx = sCol(p.col);
+      if (idx < 0) continue;
+      const name = (r[idx] || '').toLowerCase().trim();
+      if (name === fullName) { myPos = p; break; }
+    }
+    if (!myPos) continue;
+
+    // Build the partners list — everyone else assigned to this game
+    const partners = [];
+    for (const p of positions) {
+      if (p === myPos) continue;
+      const idx = sCol(p.col);
+      if (idx < 0) continue;
+      const name = (r[idx] || '').trim();
+      if (name) partners.push({ name, role: p.role });
+    }
+
+    const date = parseDate(r[sCol('date')]);
+    const time = r[sCol('start time')] || '';
+    const division = r[sCol('division name')] || '';
+    const home = r[sCol('home name')] || '';
+    const away = r[sCol('away name')] || '';
+    const isCancelled = (r[sCol('game cancelled')] || '').toUpperCase() === 'TRUE';
+
+    const entry = {
+      date, dateRaw: r[sCol('date')], time,
+      field: r[sCol('field name')] || '',
+      division, role: myPos.role,
+      home, away, partners,
+      cancelled: isCancelled,
+    };
+
+    if (isCancelled) {
+      // Even cancelled games get an estimated pay for reference
+      const rate = lookupRate(division, myPos.role, outdoorScale);
+      cancelled.push({ ...entry, pay: rate.amount, confirmed: false, source: 'cancelled' });
+    } else {
+      scheduleAssignments.push(entry);
+    }
+  }
+
+  // --- Step 3: Walk Hourly (Monitor / Mentor / Check-in) ---
+  const hourlyAssignments = [];
+  const hHdr = data.hourly[0].map(h => h.toLowerCase().trim());
+  const hCol = (n) => hHdr.indexOf(n);
+  for (let i = 1; i < data.hourly.length; i++) {
+    const r = data.hourly[i];
+    const name = (r[hCol('name')] || '').toLowerCase().trim();
+    if (name !== fullName) continue;
+    const date = parseDate(r[hCol('date')]);
+    hourlyAssignments.push({
+      date, dateRaw: r[hCol('date')],
+      time: r[hCol('start time')] || '',
+      endTime: r[hCol('end time')] || '',
+      field: r[hCol('allocation')] || '',           // "field 2"
+      division: `${r[hCol('hours')] || '?'} hrs`,
+      role: r[hCol('role')] || 'Hourly',
+      pay: parseMoney(r[hCol('pay')]),
+      hourly: true,
+      partners: [],                                  // hourly work has no partners
+    });
+  }
+
+  // --- Step 4: Merge — schedule + hourly, matched to payroll when possible ---
+  const combined = [];
+  const matchedPayrollKeys = new Set();
+
+  for (const s of scheduleAssignments) {
+    const matchKey = `${s.date ? s.date.getTime() : ''}|${s.time}|${s.role.toLowerCase()}`;
+    const pMatch = payrollByKey.get(matchKey);
+    if (pMatch) {
+      matchedPayrollKeys.add(matchKey);
+      combined.push({ ...s, pay: pMatch.pay, confirmed: true, source: 'payroll' });
+    } else {
+      const rate = lookupRate(s.division, s.role, outdoorScale);
+      combined.push({
+        ...s, pay: rate.amount, confirmed: false,
+        source: rate.key ? `estimate (${rate.key} ${s.role})` : `unmatched (${s.division})`,
+      });
+    }
+  }
+
+  for (const h of hourlyAssignments) {
+    const matchKey = `${h.date ? h.date.getTime() : ''}|${h.time}|${h.role.toLowerCase()}`;
+    const pMatch = payrollByKey.get(matchKey);
+    if (pMatch) matchedPayrollKeys.add(matchKey);
+    combined.push({
+      ...h,
+      pay: pMatch ? pMatch.pay : h.pay,
+      confirmed: !!pMatch,
+      source: pMatch ? 'payroll' : 'hourly tab',
+    });
+  }
+
+  // Any payroll rows that didn't match schedule/hourly get added standalone
+  for (const [key, p] of payrollByKey) {
+    if (matchedPayrollKeys.has(key)) continue;
+    combined.push({ ...p, partners: [], source: 'payroll (unmatched)' });
+  }
+
+  // Sort chronologically
+  const sortFn = (a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    const dd = a.date - b.date;
+    if (dd) return dd;
+    return timeToMin(a.time) - timeToMin(b.time);
+  };
+  combined.sort(sortFn);
+  cancelled.sort(sortFn);
+
+  for (const c of combined) c.period = findPayPeriod(c.date);
+  for (const c of cancelled) c.period = findPayPeriod(c.date);
+
+  return { combined, cancelled };
+}
+
+function getSheetTotal(data, firstName, lastName) {
+  let total = 0, found = false;
+  for (let i = 1; i < data.payrollSummary.length; i++) {
+    const r = data.payrollSummary[i];
+    const ln = (r[0] || '').toLowerCase().trim();
+    const fn = (r[1] || '').toLowerCase().trim();
+    if (ln === lastName && fn === firstName) {
+      total += parseMoney(r[3]);
+      found = true;
+    }
+  }
+  return found ? total : null;
+}
+
+// ============================================================
+// TIME FILTER
+// ============================================================
+// Applied to the combined list before display.
+// "upcoming" = date is today or later; "past" = date is before today.
+// "all" = no filter.
+function applyTimeFilter(list, filter) {
+  if (filter === 'all') return list;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return list.filter(item => {
+    if (!item.date) return filter === 'all';
+    const d = new Date(item.date);
+    d.setHours(0, 0, 0, 0);
+    return filter === 'upcoming' ? d >= today : d < today;
+  });
+}
+
+// ============================================================
+// COUNTDOWNS
+// ============================================================
+// Shows two pills in the header:
+//   1. Next payday — the closest upcoming pay date from PAY_PERIODS
+//   2. Next assignment — the nearest future item in `mine`
+function renderCountdowns(mine) {
+  const container = document.getElementById('countdowns');
+  const parts = [];
+
+  // Find the next payday
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const nextPayday = PAY_PERIODS
+    .map(p => ({ p, date: parseDate(p.pay) }))
+    .filter(x => x.date && x.date >= today)
+    .sort((a, b) => a.date - b.date)[0];
+  if (nextPayday) {
+    const days = daysUntil(nextPayday.date);
+    const cls = days === 0 ? 'today' : days <= 3 ? 'imminent' : '';
+    const label = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
+    parts.push(`<span class="pill ${cls}">💵 Next payday · <strong>${nextPayday.p.pay}</strong> — ${label}</span>`);
+  }
+
+  // Find the next assignment
+  const now = new Date();
+  const upcoming = mine
+    .filter(m => !m.cancelled && m.date)
+    .map(m => ({ m, when: combineDateTime(m.date, m.time) }))
+    .filter(x => x.when && x.when >= now)
+    .sort((a, b) => a.when - b.when)[0];
+  if (upcoming) {
+    const days = daysUntil(upcoming.when);
+    let label;
+    if (days === 0) {
+      const hoursLeft = Math.round((upcoming.when - now) / (60 * 60 * 1000));
+      label = hoursLeft <= 1 ? 'starting soon' : `in ${hoursLeft} hrs`;
+    } else if (days === 1) label = 'tomorrow';
+    else label = `in ${days} days`;
+    const cls = days === 0 ? 'today' : days <= 1 ? 'imminent' : '';
+    const desc = upcoming.m.hourly ? upcoming.m.role : `${upcoming.m.role} ${upcoming.m.division}`;
+    parts.push(`<span class="pill ${cls}">🏁 Next up · <strong>${desc}</strong> — ${label}</span>`);
+  } else if (mine.length > 0) {
+    parts.push(`<span class="pill">🏁 No upcoming assignments</span>`);
+  }
+
+  container.innerHTML = parts.join('');
+}
+
+// ============================================================
+// LOAD + RENDER LIFECYCLE
+// ============================================================
+async function loadAndRender() {
+  const status = document.getElementById('sheetStatus');
+  const updated = document.getElementById('lastUpdated');
+  const cacheNote = document.getElementById('cacheNote');
+  status.textContent = 'FETCHING…';
+  cacheNote.innerHTML = '';
+
+  try {
+    CACHED_DATA = await fetchAll();
+    saveCache(CACHED_DATA);
+    status.textContent = 'CONNECTED';
+    updated.textContent = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    render();
+  } catch (err) {
+    const cache = loadCache();
+    if (cache && cache.data) {
+      CACHED_DATA = cache.data;
+      status.textContent = 'OFFLINE';
+      const cachedAt = new Date(cache.savedAt);
+      updated.textContent = cachedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      cacheNote.innerHTML = `<span style="color:var(--blue)">CACHED · ${cachedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`;
+      render();
+      showWarn(`Live fetch failed (${err.message}). Showing cached data from ${cachedAt.toLocaleString()}.`);
+    } else {
+      status.textContent = 'ERROR';
+      document.getElementById('assignmentsBody').innerHTML =
+        `<tr><td colspan="7" class="state error">Failed to load: ${err.message}</td></tr>`;
+      document.getElementById('periodList').innerHTML =
+        `<div class="state error">Failed to load: ${err.message}<br><br>If you opened this file directly (file://), the browser blocks Google's response. Host on GitHub Pages or serve locally.</div>`;
+    }
+  }
+}
+
+function render() {
+  if (!CACHED_DATA) return;
+  const firstName = document.getElementById('firstName').value.trim().toLowerCase();
+  const lastName = document.getElementById('lastName').value.trim().toLowerCase();
+  const { combined, cancelled } = buildAssignments(CACHED_DATA, firstName, lastName);
+  LAST_MINE = combined;
+  LAST_CANCELLED = cancelled;
+  const sheetTotal = getSheetTotal(CACHED_DATA, firstName, lastName);
+
+  renderCountdowns(combined);
+  renderStats(combined, sheetTotal);
+
+  const filtered = applyTimeFilter(combined, CURRENT_FILTER);
+
+  if (CURRENT_VIEW === 'overview') {
+    renderTable(filtered);
+    renderPeriods(filtered);
+    renderCancelled(cancelled);
+    renderWarnings(filtered);
+  } else {
+    renderGameDay(filtered);
+  }
+}
+
+function renderStats(mine, sheetTotal) {
+  const total = mine.reduce((s, x) => s + x.pay, 0);
+  const confirmed = mine.filter(x => x.confirmed).reduce((s, x) => s + x.pay, 0);
+  const estimated = total - confirmed;
+  document.getElementById('statTotal').textContent = '$' + total.toFixed(2);
+  document.getElementById('statTotalSub').textContent = `${mine.length} item${mine.length === 1 ? '' : 's'}`;
+  document.getElementById('statConfirmed').textContent = '$' + confirmed.toFixed(2);
+  document.getElementById('statConfirmedSub').textContent = `${mine.filter(x => x.confirmed).length} paid`;
+  document.getElementById('statEstimated').textContent = '$' + estimated.toFixed(2);
+  document.getElementById('statEstimatedSub').textContent = `${mine.filter(x => !x.confirmed).length} upcoming`;
+  document.getElementById('statCount').textContent = mine.length;
+  document.getElementById('statSheetTotal').textContent = sheetTotal !== null ? '$' + sheetTotal.toFixed(2) : '—';
+}
+
+function renderTable(mine) {
+  const body = document.getElementById('assignmentsBody');
+  document.getElementById('allCount').textContent = `${mine.length} showing`;
+  if (!mine.length) {
+    body.innerHTML = `<tr><td colspan="7" class="state">No assignments in this view.</td></tr>`;
+    return;
+  }
+  body.innerHTML = mine.map(a => {
+    const r = (a.role || '').toUpperCase();
+    const cls = a.hourly ? 'hourly' : r.startsWith('CR') ? 'cr' : r.startsWith('AR') ? 'ar' : 'hourly';
+    const statusCls = a.confirmed ? 'confirmed' : 'estimated';
+    const statusText = a.confirmed ? 'CONFIRMED' : 'ESTIMATE';
+    let partnersHtml = '';
+    if (a.partners && a.partners.length) {
+      partnersHtml = `<div class="partners">w/ ${a.partners.map(p =>
+        `<span class="p-name">${p.name}</span> <span style="color:var(--ink-mute)">(${p.role})</span>`
+      ).join(', ')}</div>`;
+    }
+    return `<tr>
+      <td class="date">${fmtDate(a.date) || a.dateRaw}</td>
+      <td class="date">${a.time}</td>
+      <td>${a.field}</td>
+      <td class="div">${a.division}${partnersHtml}</td>
+      <td><span class="badge ${cls}">${a.role || '—'}</span></td>
+      <td class="date"><span class="status-dot ${statusCls}"></span>${statusText}</td>
+      <td class="pay right ${a.confirmed ? '' : 'est'}">${a.pay ? '$' + a.pay.toFixed(2) : '<span style="color:var(--accent-2)">?</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPeriods(mine) {
+  const groups = new Map();
+  const unscheduled = [];
+  for (const a of mine) {
+    if (!a.period) { unscheduled.push(a); continue; }
+    const key = a.period.pay;
+    if (!groups.has(key)) groups.set(key, { period: a.period, items: [] });
+    groups.get(key).items.push(a);
+  }
+  const list = document.getElementById('periodList');
+  document.getElementById('periodCount').textContent = `${groups.size} period${groups.size === 1 ? '' : 's'}`;
+
+  if (!groups.size && !unscheduled.length) {
+    list.innerHTML = `<div class="state">No assignments to group.</div>`;
+    return;
+  }
+
+  const sorted = Array.from(groups.values()).sort((a, b) => parseDate(a.period.pay) - parseDate(b.period.pay));
+  let html = '';
+  for (const g of sorted) {
+    const total = g.items.reduce((s, x) => s + x.pay, 0);
+    const confirmed = g.items.filter(x => x.confirmed).reduce((s, x) => s + x.pay, 0);
+    const anyEst = g.items.some(x => !x.confirmed);
+    const periodKey = g.period.pay.replace(/[\/]/g, '-');
+    html += `<div class="period-group">
+      <div class="period-header" style="border-left-color:${anyEst ? 'var(--blue)' : 'var(--accent)'}">
+        <div class="info">
+          <div class="name">PAYDAY · ${g.period.pay}</div>
+          <div class="dates">Covers ${g.period.start} → ${g.period.end}</div>
+        </div>
+        <div class="right-side">
+          <div class="totals">
+            <div class="total-amt">$${total.toFixed(2)}</div>
+            <div class="total-games">${g.items.length} item${g.items.length === 1 ? '' : 's'} · $${confirmed.toFixed(2)} confirmed</div>
+          </div>
+          <div class="download-menu" data-period="${periodKey}">
+            <button class="btn small" onclick="toggleMenu('${periodKey}')">↓ Save</button>
+            <div class="download-menu-items">
+              <button onclick="downloadPeriod('${g.period.pay}', 'csv')">CSV</button>
+              <button onclick="downloadPeriod('${g.period.pay}', 'ics')">Calendar (.ics)</button>
+              <button onclick="downloadPeriod('${g.period.pay}', 'txt')">Plain text</button>
+              <button onclick="downloadPeriod('${g.period.pay}', 'pdf')" id="pdfBtn-${periodKey}">PDF</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap" style="border-top-left-radius:0;border-top-right-radius:0;border-top:none;">
+        <table>
+          <tbody>
+            ${g.items.map(a => renderCompactRow(a)).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  if (unscheduled.length) {
+    const total = unscheduled.reduce((s, x) => s + x.pay, 0);
+    html += `<div class="period-group">
+      <div class="period-header" style="border-left-color: var(--accent-2);">
+        <div class="info">
+          <div class="name">UNSCHEDULED</div>
+          <div class="dates">Dates outside known pay periods</div>
+        </div>
+        <div class="totals">
+          <div class="total-amt">$${total.toFixed(2)}</div>
+          <div class="total-games">${unscheduled.length} item${unscheduled.length === 1 ? '' : 's'}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+  list.innerHTML = html;
+}
+
+function renderCompactRow(a) {
+  const r = (a.role || '').toUpperCase();
+  const cls = a.hourly ? 'hourly' : r.startsWith('CR') ? 'cr' : r.startsWith('AR') ? 'ar' : 'hourly';
+  const statusCls = a.confirmed ? 'confirmed' : 'estimated';
+  let partnersHtml = '';
+  if (a.partners && a.partners.length) {
+    partnersHtml = `<div class="partners">w/ ${a.partners.map(p =>
+      `<span class="p-name">${p.name}</span>`
+    ).join(', ')}</div>`;
+  }
+  return `<tr>
+    <td class="date" style="width:120px">${fmtDate(a.date)}</td>
+    <td class="date" style="width:80px">${a.time}</td>
+    <td>${a.division}${partnersHtml}</td>
+    <td style="width:60px"><span class="badge ${cls}">${a.role}</span></td>
+    <td style="width:20px"><span class="status-dot ${statusCls}"></span></td>
+    <td class="pay right ${a.confirmed ? '' : 'est'}" style="width:80px">${a.pay ? '$' + a.pay.toFixed(2) : '?'}</td>
+  </tr>`;
+}
+
+function renderCancelled(cancelled) {
+  const section = document.getElementById('cancelledSection');
+  const body = document.getElementById('cancelledBody');
+  const count = document.getElementById('cancelledCount');
+  if (!cancelled.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  count.textContent = `${cancelled.length} cancelled`;
+  body.innerHTML = cancelled.map(a => {
+    const r = (a.role || '').toUpperCase();
+    const cls = r.startsWith('CR') ? 'cr' : 'ar';
+    return `<tr class="cancelled">
+      <td class="date">${fmtDate(a.date)}</td>
+      <td class="date">${a.time}</td>
+      <td>${a.field}</td>
+      <td class="div">${a.division}</td>
+      <td><span class="badge ${cls}">${a.role}</span></td>
+      <td class="pay right est">${a.pay ? '$' + a.pay.toFixed(2) : '?'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// GAME DAY VIEW
+// ============================================================
+// Groups items by DAY (not pay period) for a screenshot-friendly
+// view of what's coming up. Shows big time, division, field,
+// partners, opponents — everything you'd want at the field.
+function renderGameDay(filtered) {
+  const container = document.getElementById('gamedayList');
+  if (!filtered.length) {
+    container.innerHTML = `<div class="state">No assignments in this view.</div>`;
+    return;
+  }
+
+  // Group by day
+  const days = new Map();
+  for (const a of filtered) {
+    if (!a.date) continue;
+    const key = a.date.toISOString().slice(0, 10);
+    if (!days.has(key)) days.set(key, { date: a.date, items: [] });
+    days.get(key).items.push(a);
+  }
+
+  const now = new Date();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let html = '';
+  for (const [key, day] of days) {
+    const isPast = day.date < today;
+    const isToday = day.date.getTime() === today.getTime();
+    const total = day.items.reduce((s, x) => s + x.pay, 0);
+    const confirmed = day.items.filter(x => x.confirmed).reduce((s, x) => s + x.pay, 0);
+
+    html += `<div class="day-block">
+      <div class="day-header">
+        <div class="day-name">${fmtDateLong(day.date)}${isToday ? ' · TODAY' : ''}</div>
+        <div class="day-meta">${day.items.length} item${day.items.length === 1 ? '' : 's'} · $${total.toFixed(2)}</div>
+      </div>`;
+
+    for (const a of day.items) {
+      const gameTime = combineDateTime(a.date, a.time);
+      const gameIsPast = gameTime && gameTime < now;
+      const r = (a.role || '').toUpperCase();
+      const cls = a.hourly ? 'hourly' : '';
+      const roleCls = a.hourly ? 'hourly' : r.startsWith('CR') ? 'cr' : 'ar';
+
+      // Split "12:30 PM" into "12:30" and "PM"
+      const timeMatch = (a.time || '').match(/^(\d{1,2}:\d{2})\s*(AM|PM)?$/i);
+      const timeHour = timeMatch ? timeMatch[1] : (a.time || '—');
+      const timeAmPm = timeMatch && timeMatch[2] ? timeMatch[2].toUpperCase() : '';
+
+      const teamsHtml = a.home && a.away
+        ? `<div class="teams">${a.home}<span class="vs">vs</span>${a.away}</div>`
+        : '';
+      const partnersHtml = a.partners && a.partners.length
+        ? `<div class="partners-line">${a.partners.map(p =>
+            `${p.name} <span class="role">(${p.role})</span>`
+          ).join(' · ')}</div>`
+        : '';
+      const endTimeHtml = a.hourly && a.endTime
+        ? `<span style="color:var(--ink-mute)"> → ${a.endTime}</span>`
+        : '';
+
+      html += `<div class="game-card ${cls} ${gameIsPast ? 'past' : ''}">
+        <div class="time-block">
+          <div class="hour">${timeHour}</div>
+          <div class="ampm">${timeAmPm}${endTimeHtml}</div>
+        </div>
+        <div class="info-block">
+          <div class="division">${a.division}</div>
+          <div class="field-line">${a.field || 'field TBD'}</div>
+          ${teamsHtml}
+          ${partnersHtml}
+        </div>
+        <div class="side-block">
+          <span class="badge ${roleCls}">${a.role}</span>
+          <div class="pay-amt ${a.confirmed ? '' : 'est'}">$${a.pay.toFixed(2)}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-mute);letter-spacing:0.1em;">${a.confirmed ? 'CONFIRMED' : 'ESTIMATE'}</div>
+        </div>
+      </div>`;
+    }
+
+    html += `<div class="day-summary">
+      <span>${day.items.length} item${day.items.length === 1 ? '' : 's'} · $${confirmed.toFixed(2)} confirmed</span>
+      <span class="amt">Total: $${total.toFixed(2)}</span>
+    </div>
+    </div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function renderWarnings(mine) {
+  const container = document.getElementById('warnContainer');
+  const unmatched = mine.filter(x => x.pay === 0);
+  if (!unmatched.length) { container.innerHTML = ''; return; }
+  container.innerHTML = `<div class="warn">
+    <strong>⚠ ${unmatched.length} item${unmatched.length === 1 ? '' : 's'} with no matched rate</strong>
+    Could not compute pay. Verify manually:
+    <ul>${unmatched.map(u => `<li>${fmtDate(u.date)} — ${u.division || '?'} · ${u.role || '?'} (${u.source})</li>`).join('')}</ul>
+  </div>`;
+}
+
+function showWarn(msg) {
+  const container = document.getElementById('warnContainer');
+  container.innerHTML = `<div class="warn"><strong>NOTICE</strong>${msg}</div>` + container.innerHTML;
+}
+
+// ============================================================
+// DOWNLOADS
+// ============================================================
+// Given a period key (like "9/15/26") and a format, generates a
+// file and triggers a browser download. Uses the Blob API — an
+// in-memory container for file data — plus an invisible <a> tag
+// with the `download` attribute to trigger the save dialog.
+// ============================================================
+function itemsForPeriod(payDate) {
+  return LAST_MINE.filter(m => m.period && m.period.pay === payDate);
+}
+
+function triggerDownload(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Escape a value for CSV: wrap in quotes if it contains comma/quote/newline
+function csvEscape(val) {
+  const s = String(val ?? '');
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function toCSV(items, payDate) {
+  const header = ['Date', 'Time', 'Field', 'Division', 'Role', 'Home', 'Away', 'Partners', 'Pay', 'Status'];
+  const rows = items.map(a => [
+    a.dateRaw || (a.date ? a.date.toISOString().slice(0, 10) : ''),
+    a.time || '',
+    a.field || '',
+    a.division || '',
+    a.role || '',
+    a.home || '',
+    a.away || '',
+    (a.partners || []).map(p => `${p.name} (${p.role})`).join('; '),
+    a.pay.toFixed(2),
+    a.confirmed ? 'CONFIRMED' : 'ESTIMATED',
+  ].map(csvEscape).join(','));
+  const total = items.reduce((s, x) => s + x.pay, 0);
+  return [
+    `# Whistle export — Pay period ${payDate}`,
+    `# Generated ${new Date().toISOString()}`,
+    `# Total: $${total.toFixed(2)}`,
+    header.join(','),
+    ...rows,
+  ].join('\n');
+}
+
+// iCal format: a plain-text calendar format that Apple Calendar,
+// Google Calendar, Outlook, etc. all recognize. Each VEVENT is one
+// item. DTSTART/DTEND use local time — no timezone conversion.
+function toICS(items, payDate) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Whistle//RefTracker//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+
+  for (const a of items) {
+    if (!a.date) continue;
+    const start = combineDateTime(a.date, a.time);
+    if (!start) continue;
+    // Default duration: 60 min for games, use end time for hourly if available
+    let end;
+    if (a.hourly && a.endTime) {
+      end = combineDateTime(a.date, a.endTime);
+    }
+    if (!end) end = new Date(start.getTime() + 60 * 60 * 1000);
+
+    const uid = `${fmt(start)}-${(a.role || '').replace(/\s/g, '')}-${(a.field || '').replace(/\s/g, '')}@whistle`;
+    const summary = a.hourly
+      ? `${a.role} (${a.division})`
+      : `Ref ${a.role} - ${a.division}`;
+    const teams = a.home && a.away ? `${a.home} vs ${a.away}\\n` : '';
+    const partners = a.partners && a.partners.length
+      ? `Partners: ${a.partners.map(p => `${p.name} (${p.role})`).join(', ')}\\n`
+      : '';
+    const pay = `Pay: $${a.pay.toFixed(2)} (${a.confirmed ? 'confirmed' : 'estimated'})`;
+    const description = `${teams}${partners}${pay}`;
+
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `DTSTAMP:${fmt(new Date())}`,
+      `DTSTART:${fmt(start)}`,
+      `DTEND:${fmt(end)}`,
+      `SUMMARY:${summary}`,
+      `LOCATION:${a.field || ''}`,
+      `DESCRIPTION:${description}`,
+      'END:VEVENT'
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+function toTXT(items, payDate) {
+  const total = items.reduce((s, x) => s + x.pay, 0);
+  const confirmed = items.filter(x => x.confirmed).reduce((s, x) => s + x.pay, 0);
+  const lines = [
+    `WHISTLE — Ref Assignments`,
+    `Pay Period: ${payDate}`,
+    `Generated: ${new Date().toLocaleString('en-US')}`,
+    ''.padEnd(60, '='),
+    '',
+  ];
+
+  // Group by day
+  const days = new Map();
+  for (const a of items) {
+    if (!a.date) continue;
+    const key = a.date.toISOString().slice(0, 10);
+    if (!days.has(key)) days.set(key, { date: a.date, items: [] });
+    days.get(key).items.push(a);
+  }
+
+  for (const [_, day] of days) {
+    lines.push(fmtDateLong(day.date).toUpperCase());
+    lines.push(''.padEnd(40, '-'));
+    for (const a of day.items) {
+      const statusMark = a.confirmed ? '✓' : '~';
+      lines.push(`${(a.time || '').padEnd(10)} ${a.role.padEnd(8)} ${a.division}`);
+      if (a.field) lines.push(`           at ${a.field}`);
+      if (a.home && a.away) lines.push(`           ${a.home} vs ${a.away}`);
+      if (a.partners && a.partners.length) {
+        lines.push(`           w/ ${a.partners.map(p => `${p.name} (${p.role})`).join(', ')}`);
+      }
+      lines.push(`           $${a.pay.toFixed(2)} ${statusMark} ${a.confirmed ? 'confirmed' : 'estimated'}`);
+      lines.push('');
+    }
+  }
+
+  lines.push(''.padEnd(60, '='));
+  lines.push(`TOTAL: $${total.toFixed(2)}   (Confirmed: $${confirmed.toFixed(2)})`);
+  lines.push(`${items.length} item${items.length === 1 ? '' : 's'}`);
+  return lines.join('\n');
+}
+
+function toPDF(items, payDate) {
+  // jsPDF is loaded from CDN; window.jspdf.jsPDF is the constructor
+  if (!window.jspdf) {
+    alert('PDF library not loaded. Check your network connection and try again.');
+    return null;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 40;
+  let y = margin;
+
+  // Header
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(24);
+  doc.text('WHISTLE', margin, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(120);
+  doc.text('Ref Pay Tracker', margin, y + 8);
+  y += 24;
+
+  doc.setDrawColor(0);
+  doc.setLineWidth(1);
+  doc.line(margin, y, pageW - margin, y);
+  y += 20;
+
+  // Period info
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(0);
+  doc.text(`Pay Period: ${payDate}`, margin, y);
+  y += 16;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(120);
+  doc.text(`Generated ${new Date().toLocaleString('en-US')}`, margin, y);
+  y += 24;
+
+  // Table header
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0);
+  doc.text('DATE',    margin,       y);
+  doc.text('TIME',    margin + 70,  y);
+  doc.text('DIVISION',margin + 130, y);
+  doc.text('ROLE',    margin + 320, y);
+  doc.text('STATUS',  margin + 370, y);
+  doc.text('PAY',     pageW - margin, y, { align: 'right' });
+  y += 6;
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageW - margin, y);
+  y += 12;
+
+  // Rows
+  doc.setFont('helvetica', 'normal');
+  for (const a of items) {
+    if (y > 720) { doc.addPage(); y = margin; }
+    doc.setTextColor(0);
+    doc.text(fmtDate(a.date), margin, y);
+    doc.text(a.time || '', margin + 70, y);
+    const div = (a.division || '').substring(0, 32);
+    doc.text(div, margin + 130, y);
+    doc.text(a.role || '', margin + 320, y);
+    doc.setTextColor(a.confirmed ? 40 : 100);
+    doc.text(a.confirmed ? 'CONFIRMED' : 'ESTIMATED', margin + 370, y);
+    doc.setTextColor(0);
+    doc.text(`$${a.pay.toFixed(2)}`, pageW - margin, y, { align: 'right' });
+    y += 14;
+
+    // Show partners on a second line
+    if (a.partners && a.partners.length) {
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      const partnerStr = 'w/ ' + a.partners.map(p => `${p.name} (${p.role})`).join(', ');
+      doc.text(partnerStr, margin + 130, y);
+      doc.setFontSize(9);
+      y += 12;
+    }
+    y += 2;
+  }
+
+  // Total
+  y += 8;
+  doc.setLineWidth(1);
+  doc.line(margin, y, pageW - margin, y);
+  y += 16;
+  const total = items.reduce((s, x) => s + x.pay, 0);
+  const confirmed = items.filter(x => x.confirmed).reduce((s, x) => s + x.pay, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('TOTAL', margin, y);
+  doc.text(`$${total.toFixed(2)}`, pageW - margin, y, { align: 'right' });
+  y += 14;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`Confirmed: $${confirmed.toFixed(2)} · Estimated: $${(total - confirmed).toFixed(2)}`, margin, y);
+
+  return doc;
+}
+
+function downloadPeriod(payDate, format) {
+  const items = itemsForPeriod(payDate);
+  if (!items.length) { alert('No items in this period.'); return; }
+  const safeName = payDate.replace(/\//g, '-');
+  const baseFilename = `whistle-${safeName}`;
+
+  if (format === 'csv') {
+    triggerDownload(`${baseFilename}.csv`, toCSV(items, payDate), 'text/csv');
+  } else if (format === 'ics') {
+    triggerDownload(`${baseFilename}.ics`, toICS(items, payDate), 'text/calendar');
+  } else if (format === 'txt') {
+    triggerDownload(`${baseFilename}.txt`, toTXT(items, payDate), 'text/plain');
+  } else if (format === 'pdf') {
+    const doc = toPDF(items, payDate);
+    if (doc) doc.save(`${baseFilename}.pdf`);
+  }
+  // Close the menu after download
+  document.querySelectorAll('.download-menu.open').forEach(m => m.classList.remove('open'));
+}
+
+// Toggle a download menu open/closed. Called from onclick handlers
+// in the rendered HTML — needs to be on the global window.
+function toggleMenu(periodKey) {
+  document.querySelectorAll('.download-menu').forEach(m => {
+    if (m.dataset.period === periodKey) m.classList.toggle('open');
+    else m.classList.remove('open');
+  });
+}
+window.toggleMenu = toggleMenu;
+window.downloadPeriod = downloadPeriod;
+
+// Close any open menu when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.download-menu')) {
+    document.querySelectorAll('.download-menu.open').forEach(m => m.classList.remove('open'));
+  }
+});
+
+// ============================================================
+// EVENT WIRING
+// ============================================================
+document.getElementById('refreshBtn').addEventListener('click', loadAndRender);
+document.getElementById('firstName').addEventListener('input', () => CACHED_DATA && render());
+document.getElementById('lastName').addEventListener('input', () => CACHED_DATA && render());
+
+// View tabs
+document.querySelectorAll('.view-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    CURRENT_VIEW = tab.dataset.view;
+    document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t === tab));
+    document.getElementById('viewOverview').style.display = CURRENT_VIEW === 'overview' ? '' : 'none';
+    document.getElementById('viewGameday').style.display  = CURRENT_VIEW === 'gameday'  ? '' : 'none';
+    if (CACHED_DATA) render();
+  });
+});
+
+// Filter chips
+document.querySelectorAll('.filter-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    CURRENT_FILTER = chip.dataset.filter;
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c === chip));
+    if (CACHED_DATA) render();
+  });
+});
+
+// Refresh countdowns every minute so "in X hours" stays accurate
+setInterval(() => { if (CACHED_DATA) renderCountdowns(LAST_MINE); }, 60000);
+
+// Register service worker (enables offline app-shell caching + install prompt)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => { /* silent — not critical */ });
+  });
+}
+
+// Initial load
+loadAndRender();
+</script>
+</body>
+</html>
