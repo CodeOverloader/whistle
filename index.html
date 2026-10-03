@@ -646,6 +646,16 @@
   <button class="btn" id="refreshBtn">↻ Refresh</button>
 </section>
 
+<section class="controls import-config">
+  <div class="control-group" style="flex:1;min-width:260px">
+    <label for="sheetSource">Import source · Google Sheet link or ID</label>
+    <input id="sheetSource" type="text" placeholder="paste a sheet link or ID" autocomplete="off" spellcheck="false" style="width:100%" />
+  </div>
+  <button class="btn" id="saveSourceBtn">Save &amp; Import</button>
+  <button class="btn ghost" id="resetSourceBtn">Reset</button>
+  <span id="sourceMsg" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-mute)"></span>
+</section>
+
 <div class="view-bar">
   <button class="view-tab active" data-view="overview">Overview</button>
   <button class="view-tab" data-view="gameday">Game Day</button>
@@ -765,7 +775,27 @@
 // ============================================================
 // SHEET CONFIG
 // ============================================================
-const SHEET_ID = '1d528hMOpZDq4nS-l8_pB0PO4iacv9SGKYGxs6uesCJE';
+const DEFAULT_SHEET_ID = '1d528hMOpZDq4nS-l8_pB0PO4iacv9SGKYGxs6uesCJE';
+const SETTINGS_KEY = 'whistle-settings-v1';
+// SETTINGS holds what the user configured (sheet source + name). It is saved in
+// localStorage so it survives reloads and is used on every load, not only on failure.
+let SETTINGS = loadSettings();
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS)); }
+  catch (e) { /* localStorage full or disabled */ }
+}
+// Accepts a full Google Sheets link or a bare ID and returns just the ID (or '' if invalid).
+function parseSheetId(input) {
+  const t = (input || '').trim();
+  const m = t.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{20,}$/.test(t) ? t : '';
+}
+const getSheetId = () => SETTINGS.sheetId || DEFAULT_SHEET_ID;
 const TABS = {
   payroll:        1551199969,
   payrollSummary: 1934412306,
@@ -774,8 +804,9 @@ const TABS = {
   outdoorPay:     581916481,
   indoorPay:      743456320,
 };
-const csvUrl = (gid) => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
-const CACHE_KEY = 'whistle-cache-v2';
+const csvUrl = (gid) => `https://docs.google.com/spreadsheets/d/${getSheetId()}/export?format=csv&gid=${gid}`;
+// Cache is per sheet so a fallback never shows another sheet's data.
+const cacheKey = () => 'whistle-cache-v2' + (SETTINGS.sheetId ? ':' + SETTINGS.sheetId : '');
 
 // ============================================================
 // 2026 PAY PERIODS
@@ -946,7 +977,7 @@ async function fetchAll() {
 
 function saveCache(data) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({
+    localStorage.setItem(cacheKey(), JSON.stringify({
       data,
       savedAt: new Date().toISOString(),
     }));
@@ -955,7 +986,7 @@ function saveCache(data) {
 
 function loadCache() {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(cacheKey());
     if (!raw) return null;
     return JSON.parse(raw);
   } catch (e) { return null; }
@@ -1867,8 +1898,40 @@ document.addEventListener('click', (e) => {
 // EVENT WIRING
 // ============================================================
 document.getElementById('refreshBtn').addEventListener('click', loadAndRender);
-document.getElementById('firstName').addEventListener('input', () => CACHED_DATA && render());
-document.getElementById('lastName').addEventListener('input', () => CACHED_DATA && render());
+// Restore saved name + sheet source before the first load
+document.getElementById('firstName').value = SETTINGS.firstName || '';
+document.getElementById('lastName').value = SETTINGS.lastName || '';
+document.getElementById('sheetSource').value = SETTINGS.sheetId || '';
+
+function onNameInput() {
+  SETTINGS.firstName = document.getElementById('firstName').value;
+  SETTINGS.lastName = document.getElementById('lastName').value;
+  saveSettings();
+  if (CACHED_DATA) render();
+}
+document.getElementById('firstName').addEventListener('input', onNameInput);
+document.getElementById('lastName').addEventListener('input', onNameInput);
+
+document.getElementById('saveSourceBtn').addEventListener('click', () => {
+  const raw = document.getElementById('sheetSource').value;
+  const msg = document.getElementById('sourceMsg');
+  if (!raw.trim()) { delete SETTINGS.sheetId; }
+  else {
+    const id = parseSheetId(raw);
+    if (!id) { msg.textContent = 'Not a valid sheet link or ID'; return; }
+    SETTINGS.sheetId = id;
+  }
+  saveSettings();
+  msg.textContent = 'Saved';
+  loadAndRender();
+});
+document.getElementById('resetSourceBtn').addEventListener('click', () => {
+  delete SETTINGS.sheetId;
+  saveSettings();
+  document.getElementById('sheetSource').value = '';
+  document.getElementById('sourceMsg').textContent = 'Reset to default';
+  loadAndRender();
+});
 
 // View tabs
 document.querySelectorAll('.view-tab').forEach(tab => {
