@@ -888,7 +888,30 @@ function parseDate(str) {
     y = +y < 100 ? 2000 + +y : +y;
     return new Date(+y, +mo - 1, +d);
   }
+  // Looser forms: "Sat 10/3/2026", "Saturday, October 3, 2026", "Oct 3", "10/3".
+  // Strip a leading weekday, then try numeric M/D[/Y] and "Month D[, Y]".
+  const t = s.replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+/i, '');
+  const thisYear = new Date().getFullYear();
+  m = t.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (m) {
+    const y = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : thisYear;
+    return new Date(y, +m[1] - 1, +m[2]);
+  }
+  m = t.match(/^([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/i);
+  if (m) {
+    const mo = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(m[1].slice(0, 3).toLowerCase());
+    if (mo >= 0) return new Date(m[3] ? +m[3] : thisYear, mo, +m[2]);
+  }
   return null;
+}
+
+// Normalise a person's name so cosmetic differences in the sheet don't hide a game:
+// non-breaking/double spaces, "(M)" style tags, and "Last, First" order.
+function normName(str) {
+  let n = (str || '').replace(/\u00a0/g, ' ').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const c = n.match(/^([^,]+),\s*(.+)$/);
+  if (c) n = `${c[2]} ${c[1]}`.trim();
+  return n;
 }
 
 function fmtDate(d) {
@@ -1031,7 +1054,8 @@ function lookupRate(division, role, outdoorScale) {
 //   - `cancelled`: games that were on the schedule but got called off
 // ============================================================
 function buildAssignments(data, firstName, lastName) {
-  const fullName = `${firstName} ${lastName}`.toLowerCase();
+  const fullName = normName(`${firstName} ${lastName}`);
+  firstName = normName(firstName); lastName = normName(lastName);
   const outdoorScale = buildPayScale(data.outdoorPay);
 
   // --- Step 1: Index Payroll by (date + time + role) ---
@@ -1040,8 +1064,8 @@ function buildAssignments(data, firstName, lastName) {
   const pCol = (n) => payHdr.indexOf(n);
   for (let i = 1; i < data.payroll.length; i++) {
     const r = data.payroll[i];
-    const fn = (r[pCol('first name')] || '').toLowerCase().trim();
-    const ln = (r[pCol('last name')] || '').toLowerCase().trim();
+    const fn = normName(r[pCol('first name')]);
+    const ln = normName(r[pCol('last name')]);
     if (fn !== firstName || ln !== lastName) continue;
     const date = parseDate(r[pCol('date')]);
     const time = r[pCol('time')] || '';
@@ -1079,7 +1103,7 @@ function buildAssignments(data, firstName, lastName) {
     for (const p of positions) {
       const idx = sCol(p.col);
       if (idx < 0) continue;
-      const name = (r[idx] || '').toLowerCase().trim();
+      const name = normName(r[idx]);
       if (name === fullName) { myPos = p; break; }
     }
     if (!myPos) continue;
@@ -1124,7 +1148,7 @@ function buildAssignments(data, firstName, lastName) {
   const hCol = (n) => hHdr.indexOf(n);
   for (let i = 1; i < data.hourly.length; i++) {
     const r = data.hourly[i];
-    const name = (r[hCol('name')] || '').toLowerCase().trim();
+    const name = normName(r[hCol('name')]);
     if (name !== fullName) continue;
     const date = parseDate(r[hCol('date')]);
     hourlyAssignments.push({
@@ -1199,9 +1223,9 @@ function getSheetTotal(data, firstName, lastName) {
   let total = 0, found = false;
   for (let i = 1; i < data.payrollSummary.length; i++) {
     const r = data.payrollSummary[i];
-    const ln = (r[0] || '').toLowerCase().trim();
-    const fn = (r[1] || '').toLowerCase().trim();
-    if (ln === lastName && fn === firstName) {
+    const ln = normName(r[0]);
+    const fn = normName(r[1]);
+    if (ln === normName(lastName) && fn === normName(firstName)) {
       total += parseMoney(r[3]);
       found = true;
     }
