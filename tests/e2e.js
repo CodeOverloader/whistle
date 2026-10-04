@@ -112,6 +112,26 @@ const check = (name, ok, extra = '') => { results.push(ok); console.log(`${ok ? 
   });
   for (const v of variants) check(`weekend game found: date=${v.d} name=${v.n.replace(/\u00a0/g, '<nbsp>')}`, v.ok);
 
+  // 8. Real sheet headers: "CR1/CR2/AR1/AR2", "Referee First Name", unlabeled cancel checkbox column
+  const real = await page.evaluate(() => {
+    const data = {
+      schedule: parseCSV('date,start time,field name,division name,home name,away name,CR1,CR2,AR1,AR2,FALSE\n' +
+        '2026-10-03,8:00 AM,F1,U10 Boys,A,B,carl one,dana two,eve three,fay four,FALSE\n' +
+        '2026-10-03,9:00 AM,F1,U10 Boys,A,B,carl one,,,,TRUE'),
+      payroll: parseCSV('Date,Time,Field,Age,Role,Referee First Name,Referee Last Name,Type,Pay\n2026-10-03,8:00 AM,F1,u10,AR,eve,three,Ref,31'),
+      payrollSummary: parseCSV('l,f,t,total'), hourly: parseCSV('date,Start Time,End time,Name,Role,Hours,Pay,Allocation'),
+      outdoorPay: parseCSV('age,cr,ar\nu10,$30,$20'), indoorPay: [],
+    };
+    const find = (f, l) => buildAssignments(data, f, l);
+    return {
+      cr1: find('carl', 'one').combined.length, cr2: find('dana', 'two').combined.length,
+      ar1: find('eve', 'three').combined[0]?.confirmed, ar2: find('fay', 'four').combined.length,
+      cancelled: find('carl', 'one').cancelled.length,
+    };
+  });
+  check('CR1, CR2, AR1, AR2 columns all matched', real.cr1 === 1 && real.cr2 === 1 && real.ar1 === true && real.ar2 === 1, JSON.stringify(real));
+  check('unlabeled cancel column detected', real.cancelled === 1);
+
   await browser.close(); server.close();
   process.exit(results.every(Boolean) ? 0 : 1);
 })();

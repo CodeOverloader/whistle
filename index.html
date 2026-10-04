@@ -1061,7 +1061,8 @@ function buildAssignments(data, firstName, lastName) {
   // --- Step 1: Index Payroll by (date + time + role) ---
   const payrollByKey = new Map();
   const payHdr = data.payroll[0].map(h => h.toLowerCase().trim());
-  const pCol = (n) => payHdr.indexOf(n);
+  // Exact match first, else a header that ends with it ("Referee First Name" for "first name")
+  const pCol = (n) => { const i = payHdr.indexOf(n); return i >= 0 ? i : payHdr.findIndex(h => h.endsWith(n)); };
   for (let i = 1; i < data.payroll.length; i++) {
     const r = data.payroll[i];
     const fn = normName(r[pCol('first name')]);
@@ -1086,15 +1087,23 @@ function buildAssignments(data, firstName, lastName) {
   //                       Game Cancelled
   const scheduleAssignments = [];
   const cancelled = [];
-  const schedHdr = data.schedule[0].map(h => h.toLowerCase().trim());
-  const sCol = (n) => schedHdr.indexOf(n);
+  // Spaces are ignored so "CR1", "CR 1" and "cr 1" all match.
+  const squash = (x) => (x || '').toLowerCase().replace(/\s+/g, '');
+  const schedHdr = data.schedule[0].map(squash);
+  const sCol = (n) => schedHdr.indexOf(squash(n));
   const positions = [
     { col: 'cr 1', role: 'CR' },
     { col: 'cr 2', role: 'CR' },
     { col: 'ar 1', role: 'AR' },
-    { col: 'ar2',  role: 'AR' },
-    { col: 'ar 2', role: 'AR' }, // future-proofing
+    { col: 'ar 2', role: 'AR' },
   ];
+  // The cancel checkbox column may have no "Game Cancelled" header (the sheet's header cell
+  // there is itself a checkbox), so fall back to the column right after the last position.
+  let cancelCol = sCol('game cancelled');
+  if (cancelCol < 0) {
+    const last = Math.max(...positions.map(p => sCol(p.col)));
+    if (last >= 0) cancelCol = last + 1;
+  }
 
   for (let i = 1; i < data.schedule.length; i++) {
     const r = data.schedule[i];
@@ -1123,7 +1132,7 @@ function buildAssignments(data, firstName, lastName) {
     const division = r[sCol('division name')] || '';
     const home = r[sCol('home name')] || '';
     const away = r[sCol('away name')] || '';
-    const isCancelled = (r[sCol('game cancelled')] || '').toUpperCase() === 'TRUE';
+    const isCancelled = cancelCol >= 0 && (r[cancelCol] || '').toUpperCase() === 'TRUE';
 
     const entry = {
       date, dateRaw: r[sCol('date')], time,
