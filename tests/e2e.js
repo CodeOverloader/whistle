@@ -94,6 +94,24 @@ const check = (name, ok, extra = '') => { results.push(ok); console.log(`${ok ? 
   await page.waitForFunction(() => document.getElementById('sheetStatus').textContent !== 'FETCHING…');
   check('reset: default sheet has no cache, so ERROR rather than other sheet data', (await page.textContent('#sheetStatus')) === 'ERROR');
 
+  // 7. Weekend games in assorted sheet formats must be found and dated
+  const variants = await page.evaluate(() => {
+    const H = 'date,start time,field name,division name,home name,away name,CR 1,CR 2,AR 1,AR2,game cancelled';
+    const cases = [
+      ['2026-10-03', 'Jane Doe'], ['10/3/2026', 'Jane Doe'], ['Sat 10/3/2026', 'Jane Doe'],
+      ['"Saturday, October 3, 2026"', 'Jane Doe'], ['Oct 3', 'Jane Doe'], ['10/3', 'Jane Doe'],
+      ['10/3/2026', 'Jane  Doe'], ['10/3/2026', 'Jane\u00a0Doe'], ['10/3/2026', 'Jane Doe (M)'], ['10/3/2026', '"Doe, Jane"'],
+    ];
+    return cases.map(([d, n]) => {
+      const data = { payroll: parseCSV('first name,last name,date,time,role,field,age,pay'), payrollSummary: parseCSV('l,f,x,t'),
+        hourly: parseCSV('name,date,start time,end time,allocation,hours,role,pay'), outdoorPay: parseCSV('age,cr,ar\nu10,$30,$20'), indoorPay: [],
+        schedule: parseCSV(`${H}\n${d},9:00 AM,F1,U10 Boys,A,B,${n},,,,FALSE`) };
+      const g = buildAssignments(data, 'jane', 'doe').combined[0];
+      return { d, n, ok: !!g && !!g.date && g.date.getMonth() === 9 && g.date.getDate() === 3 };
+    });
+  });
+  for (const v of variants) check(`weekend game found: date=${v.d} name=${v.n.replace(/\u00a0/g, '<nbsp>')}`, v.ok);
+
   await browser.close(); server.close();
   process.exit(results.every(Boolean) ? 0 : 1);
 })();
